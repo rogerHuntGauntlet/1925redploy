@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { User, ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase, getWorkspaceUsers } from '../lib/supabase'
+import ErrorBoundary from './ErrorBoundary'
 
 type DMListProps = {
   workspaceId: string
@@ -88,75 +89,72 @@ export default function CollapsibleDMList({
   });
 
   return (
-    <>
-      <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 200ms ease-in-out forwards;
-        }
-      `}</style>
-      <div className={`bg-gray-800 text-white h-full flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <button
-          onClick={handleCollapse}
-          className={`flex items-center p-4 hover:bg-gray-700 transition-colors ${isCollapsed ? 'justify-center' : 'justify-between'}`}
-        >
-          <span 
-            className={`text-xl font-bold transition-all duration-300 ease-in-out ${
-              isCollapsed 
-                ? 'opacity-0 w-0 hidden' 
-                : 'opacity-0 delay-200 animate-fadeIn'
-            }`}
-          >
-            Direct Messages
-          </span>
-          {isCollapsed ? <ChevronRight size={24} /> : <ChevronDown size={24} />}
-        </button>
-        <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 scrollbar-thumb-rounded-full scrollbar-track-rounded-full">
-          <ul className={`space-y-1 ${isCollapsed ? 'px-4' : 'p-2'}`}>
-            {sortedUsers.map((user) => (
-              <li key={user.id}>
-                <button
-                  onClick={() => onSelectDMAction(user.id)}
-                  className={`flex items-center w-full p-2 rounded-lg transition-all duration-200 ${
-                    activeUserId === user.id ? 'bg-gray-700' : 'hover:bg-gray-700'
-                  } ${isCollapsed ? 'justify-center' : 'justify-start'}`}
-                >
-                  <div className="relative flex-shrink-0">
-                    {user.avatar_url ? (
-                      <img
-                        src={user.avatar_url}
-                        alt={user.username}
-                        className="w-8 h-8 rounded-full"
-                      />
-                    ) : (
-                      <User size={32} className="text-gray-400" />
-                    )}
-                    <span
-                      className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-800 ${
-                        user.status === 'online'
-                          ? 'bg-green-500'
-                          : user.status === 'away'
-                          ? 'bg-yellow-500'
-                          : 'bg-gray-500'
-                      }`}
-                    ></span>
-                  </div>
-                  {!isCollapsed && (
-                    <span className="ml-3 truncate">{user.username}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+    <ErrorBoundary fallback={
+      <div className="p-4">
+        <p className="text-red-600">Direct messages list is currently unavailable.</p>
       </div>
-    </>
+    }>
+      <div className="space-y-2">
+        <ErrorBoundary fallback={
+          <div className="p-2">
+            <p className="text-yellow-600">DM header is unavailable.</p>
+          </div>
+        }>
+          <div className="flex items-center justify-between p-2">
+            <h3 className="font-semibold">Direct Messages</h3>
+            <button onClick={handleCollapse} className="p-1 hover:bg-gray-100 rounded">
+              {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+        </ErrorBoundary>
+
+        {!isCollapsed && (
+          <ErrorBoundary fallback={
+            <div className="p-2">
+              <p className="text-yellow-600">DM list is unavailable.</p>
+            </div>
+          }>
+            <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 scrollbar-thumb-rounded-full scrollbar-track-rounded-full">
+              <ul className={`space-y-1 ${isCollapsed ? 'px-4' : 'p-2'}`}>
+                {sortedUsers.map((user) => (
+                  <li key={user.id}>
+                    <button
+                      onClick={() => onSelectDMAction(user.id)}
+                      className={`flex items-center w-full p-2 rounded-lg transition-all duration-200 ${
+                        activeUserId === user.id ? 'bg-gray-700' : 'hover:bg-gray-700'
+                      } ${isCollapsed ? 'justify-center' : 'justify-start'}`}
+                    >
+                      <div className="relative flex-shrink-0">
+                        {user.avatar_url ? (
+                          <img
+                            src={user.avatar_url}
+                            alt={user.username}
+                            className="w-8 h-8 rounded-full"
+                          />
+                        ) : (
+                          <User size={32} className="text-gray-400" />
+                        )}
+                        <span
+                          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-800 ${
+                            user.status === 'online'
+                              ? 'bg-green-500'
+                              : user.status === 'away'
+                              ? 'bg-yellow-500'
+                              : 'bg-gray-500'
+                          }`}
+                        ></span>
+                      </div>
+                      {!isCollapsed && (
+                        <span className="ml-3 truncate">{user.username}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </ErrorBoundary>
+        )}
+      </div>
+    </ErrorBoundary>
   )
 }

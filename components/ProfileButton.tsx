@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { toast } from 'react-hot-toast'
 
 interface Profile {
   name: string;
@@ -35,9 +36,11 @@ export default function ProfileButton() {
         .eq('email', profile.email)
 
       if (error) throw error
+      toast.success('Profile updated successfully');
       setShowModal(false)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating profile:', error)
+      toast.error(error.message || 'Unable to update profile. Please ensure all fields are valid and try again.');
     }
   }
 

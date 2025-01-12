@@ -1,119 +1,110 @@
-import React, { useState, useEffect } from 'react'
-import { Smile } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { useState } from 'react';
+import { Smile } from 'lucide-react';
+import ErrorBoundary from './ErrorBoundary';
 
 interface EmojiReactionsProps {
-  messageId: string
-  currentUserId: string
-  initialReactions: { [key: string]: string[] }
+  messageId: string;
+  currentUserId: string;
+  initialReactions?: { [key: string]: string[] };
+  onReactionUpdate: (messageId: string, emoji: string, action: 'add' | 'remove') => void;
 }
 
-interface Reaction {
-  reaction: string
-  user_id: string
-}
+const COMMON_EMOJIS = ['👍', '❤️', '😄', '🎉', '🤔', '👀', '🚀', '👏'];
 
-const EmojiReactions: React.FC<EmojiReactionsProps> = ({ messageId, currentUserId, initialReactions }) => {
-  const [reactions, setReactions] = useState(initialReactions)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+export default function EmojiReactions({ 
+  messageId, 
+  currentUserId, 
+  initialReactions = {}, 
+  onReactionUpdate 
+}: EmojiReactionsProps) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [reactions, setReactions] = useState(initialReactions);
 
-  useEffect(() => {
-    fetchReactions()
-  }, [messageId])
-
-  const fetchReactions = async () => {
-    const { data, error } = await supabase
-      .from('message_reactions')
-      .select('*')
-      .eq('message_id', messageId)
-
-    if (error) {
-      console.error('Error fetching reactions:', error)
-    } else {
-      const groupedReactions = data.reduce((acc: { [key: string]: string[] }, reaction: Reaction) => {
-        if (!acc[reaction.reaction]) {
-          acc[reaction.reaction] = []
-        }
-        acc[reaction.reaction].push(reaction.user_id)
-        return acc
-      }, {})
-      setReactions(groupedReactions)
-    }
-  }
-
-  const handleReaction = async (emoji: string) => {
-    const hasReacted = reactions[emoji]?.includes(currentUserId)
-
-    if (hasReacted) {
-      const { error } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', currentUserId)
-        .eq('reaction', emoji)
-
-      if (error) {
-        console.error('Error removing reaction:', error)
+  const handleReaction = (emoji: string) => {
+    const userReacted = reactions[emoji]?.includes(currentUserId);
+    const action = userReacted ? 'remove' : 'add';
+    
+    onReactionUpdate(messageId, emoji, action);
+    
+    setReactions(prev => {
+      const updated = { ...prev };
+      if (!updated[emoji]) updated[emoji] = [];
+      
+      if (userReacted) {
+        updated[emoji] = updated[emoji].filter(id => id !== currentUserId);
+        if (updated[emoji].length === 0) delete updated[emoji];
       } else {
-        setReactions(prev => ({
-          ...prev,
-          [emoji]: prev[emoji].filter(id => id !== currentUserId)
-        }))
+        updated[emoji] = [...updated[emoji], currentUserId];
       }
-    } else {
-      const { error } = await supabase
-        .from('message_reactions')
-        .insert({ message_id: messageId, user_id: currentUserId, reaction: emoji })
-
-      if (error) {
-        console.error('Error adding reaction:', error)
-      } else {
-        setReactions(prev => ({
-          ...prev,
-          [emoji]: [...(prev[emoji] || []), currentUserId]
-        }))
-      }
-    }
-
-    setShowEmojiPicker(false)
-  }
+      
+      return updated;
+    });
+  };
 
   return (
-    <div className="flex items-center space-x-2">
-      {Object.entries(reactions).map(([emoji, users]) => (
-        users.length > 0 && (
-          <button
-            key={emoji}
-            onClick={() => handleReaction(emoji)}
-            className={`px-2 py-1 rounded-full text-sm ${
-              users.includes(currentUserId) ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
-            }`}
-          >
-            {emoji} {users.length}
-          </button>
-        )
-      ))}
-      <button
-        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-        className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-      >
-        <Smile size={20} />
-      </button>
-      {showEmojiPicker && (
-        <div className="absolute mt-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 z-10">
-          {['👍', '❤️', '😂', '😮', '😢', '😡'].map((emoji) => (
-            <button
-              key={emoji}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-              onClick={() => handleReaction(emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+    <ErrorBoundary fallback={
+      <div className="p-2">
+        <p className="text-red-600">Emoji reactions are currently unavailable.</p>
+      </div>
+    }>
+      <div className="flex items-center space-x-2">
+        <ErrorBoundary fallback={
+          <div className="p-1">
+            <p className="text-yellow-600">Reaction display is unavailable.</p>
+          </div>
+        }>
+          <div className="flex flex-wrap gap-1">
+            {Object.entries(reactions).map(([emoji, users]) => (
+              <button
+                key={emoji}
+                onClick={() => handleReaction(emoji)}
+                className={`px-2 py-1 rounded-full text-sm ${
+                  users.includes(currentUserId)
+                    ? 'bg-blue-100 dark:bg-blue-900'
+                    : 'bg-gray-100 dark:bg-gray-700'
+                } hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors`}
+              >
+                <span>{emoji}</span>
+                <span className="ml-1">{users.length}</span>
+              </button>
+            ))}
+          </div>
+        </ErrorBoundary>
 
-export default EmojiReactions
+        <ErrorBoundary fallback={
+          <div className="p-1">
+            <p className="text-yellow-600">Emoji picker is unavailable.</p>
+          </div>
+        }>
+          <div className="relative">
+            <button
+              onClick={() => setShowPicker(!showPicker)}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full"
+            >
+              <Smile className="w-5 h-5 text-gray-500" />
+            </button>
+
+            {showPicker && (
+              <div className="absolute bottom-full right-0 mb-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-4 gap-2">
+                  {COMMON_EMOJIS.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleReaction(emoji);
+                        setShowPicker(false);
+                      }}
+                      className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </ErrorBoundary>
+      </div>
+    </ErrorBoundary>
+  );
+}

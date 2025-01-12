@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const config = require('./lib/config').default;
+
 const nextConfig = {
   images: {
     domains: [
@@ -6,7 +8,8 @@ const nextConfig = {
       'media.tenor.com',
       'localhost',
       'www.gravatar.com',
-      'your-default-ai-avatar.com'
+      'your-default-ai-avatar.com',
+      'randomuser.me'
     ],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
@@ -18,7 +21,7 @@ const nextConfig = {
   swcMinify: true,
   reactStrictMode: true,
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production',
+    removeConsole: config.app.isProd,
   },
 }
 

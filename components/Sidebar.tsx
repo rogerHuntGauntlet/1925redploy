@@ -4,6 +4,7 @@ import ChannelList from './ChannelList'
 import UserStatus from './UserStatus'
 import { getChannels } from '../lib/supabase'
 import '../styles/sidebar.css';
+import ErrorBoundary from './ErrorBoundary';
 
 interface Channel {
   id: string;
@@ -27,14 +28,14 @@ interface SidebarProps {
   }>
 }
 
-const Sidebar: FC<SidebarProps> = ({
+export default function Sidebar({
   activeWorkspace,
   setActiveWorkspace,
   activeChannel,
   setActiveChannel,
   currentUser,
   workspaces
-}) => {
+}: SidebarProps) {
   const [showShareLink, setShowShareLink] = useState(false)
   const [shareLink, setShareLink] = useState('')
   const [showWorkspaces, setShowWorkspaces] = useState(true)
@@ -71,40 +72,28 @@ const Sidebar: FC<SidebarProps> = ({
   const currentWorkspace = workspaces.find(w => w.id === activeWorkspace)
 
   return (
-    <div className="w-75 bg-gray-800 text-white flex flex-col h-full overflow-hidden pt-4">
-      
-
-      <div className="mb-4 px-4">
-        <UserStatus currentUser={currentUser} />
+    <ErrorBoundary fallback={
+      <div className="w-64 bg-gray-100 p-4">
+        <p className="text-red-600">Navigation sidebar is currently unavailable.</p>
       </div>
-      
-      {activeWorkspace && (
-        <>
-          <button
-            onClick={handleShareWorkspace}
-            className="mb-4 mx-4 bg-blue-500 text-white p-2 rounded-lg flex items-center justify-center hover:bg-blue-600 transition-colors"
-          >
-            <Share2 size={18} className="mr-2" />
-            Share Workspace
-          </button>
-          {showShareLink && (
-            <div className="mb-4 mx-4 p-2 bg-gray-700 rounded-lg">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-sm">Share this link:</p>
-                {copySuccess && (
-                  <span className="text-green-400 text-xs">Copied to clipboard!</span>
-                )}
-              </div>
-              <input
-                type="text"
-                value={shareLink}
-                readOnly
-                className="w-full bg-gray-600 text-white p-1 rounded cursor-pointer"
-                onClick={handleShareWorkspace}
-              />
-            </div>
-          )}
-          <div className="flex-1 overflow-y-auto px-2 space-y-2 custom-scrollbar">
+    }>
+      <div className="w-64 h-full bg-gray-100 flex flex-col">
+        <ErrorBoundary fallback={
+          <div className="p-4">
+            <p className="text-yellow-600">Workspace header is unavailable.</p>
+          </div>
+        }>
+          <div className="p-4 border-b">
+            <h2 className="text-lg font-semibold">{currentWorkspace?.name || 'Workspace'}</h2>
+          </div>
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={
+          <div className="p-4">
+            <p className="text-yellow-600">Channel list is unavailable.</p>
+          </div>
+        }>
+          <div className="flex-1 overflow-y-auto">
             <ChannelList
               channels={channels}
               activeChannel={activeChannel}
@@ -113,10 +102,18 @@ const Sidebar: FC<SidebarProps> = ({
               currentUser={currentUser}
             />
           </div>
-        </>
-      )}
-    </div>
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={
+          <div className="p-4">
+            <p className="text-yellow-600">User section is unavailable.</p>
+          </div>
+        }>
+          <div className="p-4 border-t">
+            <UserStatus currentUser={currentUser} />
+          </div>
+        </ErrorBoundary>
+      </div>
+    </ErrorBoundary>
   )
 }
-
-export default Sidebar

@@ -1,6 +1,8 @@
 'use client'
 
 import { createContext, useState, useContext, ReactNode, useEffect } from 'react'
+import SupabaseProvider from '@/lib/supabase-provider'
+import ErrorBoundary from '@/components/ErrorBoundary'
 
 interface User {
   id: string
@@ -18,7 +20,7 @@ interface ChatContext {
 
 const ChatContext = createContext<ChatContext | undefined>(undefined)
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User>({
     id: '1',
     name: 'Demo User',
@@ -47,9 +49,13 @@ export function Providers({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ChatContext.Provider value={{ currentUser, setCurrentUser, isDarkMode, toggleDarkMode }}>
-      {children}
-    </ChatContext.Provider>
+    <ErrorBoundary>
+      <SupabaseProvider>
+        <ChatContext.Provider value={{ currentUser, setCurrentUser, isDarkMode, toggleDarkMode }}>
+          {children}
+        </ChatContext.Provider>
+      </SupabaseProvider>
+    </ErrorBoundary>
   )
 }
 

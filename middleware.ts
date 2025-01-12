@@ -1,93 +1,114 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { PublicKey, Connection, ParsedAccountData } from '@solana/web3.js'
+import { executeSolanaOperation } from '@/lib/solana'
+import { tokenConfig } from '@/lib/token-config'
+import { checkRateLimit, getRateLimitResponse, RateLimitConfig } from '@/lib/rate-limit'
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
-  const supabase = createMiddlewareClient({ req, res })
+// Pages that require payment/access
+const PROTECTED_PAGES = [
+  '/platform',
+  '/chat',
+  '/settings',
+] as const
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+// Pages that are accessible without payment
+const PUBLIC_PAGES = [
+  '/',
+  '/auth',
+  '/legal',
+  '/support',
+  '/api/create-checkout-session',
+  '/api/verify-riddle',
+  '/payment/success',
+  '/payment/canceled',
+  '/access',
+] as const
 
-  // If user is not authenticated and trying to access protected routes, redirect to auth
-  if (!session) {
-    const isProtectedRoute = req.nextUrl.pathname.startsWith('/workspace') ||
-      req.nextUrl.pathname.startsWith('/chat') ||
-      req.nextUrl.pathname.startsWith('/platform') ||
-      req.nextUrl.pathname.startsWith('/onboarding')
+// Rate limit configurations for different endpoints
+const RATE_LIMITS: Record<string, RateLimitConfig> = {
+  'api/auth': { maxRequests: 5, windowMs: 15 * 60 * 1000 }, // 5 requests per 15 minutes
+  'api/verify-riddle': { maxRequests: 3, windowMs: 60 * 60 * 1000 }, // 3 requests per hour
+  'api/create-checkout-session': { maxRequests: 10, windowMs: 60 * 60 * 1000 }, // 10 requests per hour
+  'api/validate-token': { maxRequests: 20, windowMs: 60 * 1000 }, // 20 requests per minute
+  'default': { maxRequests: 100, windowMs: 15 * 60 * 1000 }, // 100 requests per 15 minutes
+}
 
-    if (isProtectedRoute) {
-      const authUrl = new URL('/auth', req.url)
-      authUrl.searchParams.set('next', req.nextUrl.pathname)
-      return NextResponse.redirect(authUrl)
+interface TokenAccount {
+  account: {
+    data: ParsedAccountData & {
+      parsed: {
+        info: {
+          tokenAmount: {
+            uiAmount: number;
+          };
+        };
+      };
+    };
+  };
+}
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Check rate limits for API routes
+  if (pathname.startsWith('/api/')) {
+    // Find matching rate limit config
+    const endpoint = Object.keys(RATE_LIMITS).find(key => pathname.includes(key))
+    const rateLimitConfig = endpoint ? RATE_LIMITS[endpoint] : RATE_LIMITS.default
+
+    // Check rate limit
+    const { isLimited, info } = await checkRateLimit(request, rateLimitConfig)
+    if (isLimited) {
+      return getRateLimitResponse(info)
     }
-    return res
   }
 
-  // Skip checks for auth and callback routes
-  if (req.nextUrl.pathname.startsWith('/auth')) {
-    return res
+  // Allow public pages
+  if (PUBLIC_PAGES.some(page => pathname.startsWith(page))) {
+    return NextResponse.next()
   }
 
-  // Get current user metadata
-  const { data: { user } } = await supabase.auth.getUser()
-  const isNewSignup = user?.user_metadata?.is_new_signup === true
-  
-  console.log('Middleware Debug:', {
-    path: req.nextUrl.pathname,
-    isNewSignup,
-    metadata: user?.user_metadata
-  })
+  // Check if page requires protection
+  if (!PROTECTED_PAGES.some(page => pathname.startsWith(page))) {
+    return NextResponse.next()
+  }
 
-  // Check user's setup status
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('username')
-    .eq('id', session.user.id)
-    .single()
-
-  const { data: workspaces } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', session.user.id)
-
-  const hasProfile = profile?.username
-  const hasWorkspaces = workspaces && workspaces.length > 0
-
-  console.log('Middleware Status:', {
-    hasProfile,
-    hasWorkspaces,
-    isNewSignup,
-    currentPath: req.nextUrl.pathname
-  })
-
-  // If on onboarding page
-  if (req.nextUrl.pathname.startsWith('/onboarding')) {
-    // If setup is complete, redirect to platform
-    if (hasProfile && hasWorkspaces && !isNewSignup) {
-      console.log('Middleware: Redirecting to platform - Setup complete')
-      return NextResponse.redirect(new URL('/platform', req.url))
+  try {
+    const walletAddress = request.headers.get('x-wallet-address')
+    if (!walletAddress) {
+      throw new Error('No wallet address provided')
     }
-    console.log('Middleware: Allowing onboarding access - Setup incomplete')
-    return res
-  }
 
-  // If on platform or other protected pages
-  if (req.nextUrl.pathname.startsWith('/platform') || 
-      req.nextUrl.pathname.startsWith('/workspace') || 
-      req.nextUrl.pathname.startsWith('/chat')) {
-    // If setup is not complete, redirect to onboarding
-    if (!hasProfile || !hasWorkspaces || isNewSignup) {
-      console.log('Middleware: Redirecting to onboarding - Setup incomplete')
-      const onboardingUrl = new URL('/onboarding', req.url)
-      onboardingUrl.searchParams.set('status', isNewSignup ? 'new' : (!hasProfile ? 'needs_profile' : 'needs_workspace'))
-      return NextResponse.redirect(onboardingUrl)
+    const publicKey = new PublicKey(walletAddress)
+
+    // Use the executeSolanaOperation helper
+    const tokenAccounts = await executeSolanaOperation<{
+      value: TokenAccount[];
+    }>(async (connection: Connection) => {
+      return await connection.getParsedTokenAccountsByOwner(
+        publicKey,
+        { mint: tokenConfig.mintAddress }
+      )
+    })
+
+    // Check if user has required token balance
+    const hasAccess = tokenAccounts.value.some(
+      (account: TokenAccount) => {
+        const balance = account.account.data.parsed.info.tokenAmount.uiAmount
+        return balance >= tokenConfig.requiredBalance
+      }
+    )
+
+    if (!hasAccess) {
+      return NextResponse.redirect(new URL('/access', request.url))
     }
-    console.log('Middleware: Allowing platform access - Setup complete')
-  }
 
-  return res
+    return NextResponse.next()
+  } catch (error) {
+    console.error('Token validation error:', error)
+    return NextResponse.redirect(new URL('/access', request.url))
+  }
 }
 
 export const config = {
@@ -98,7 +119,8 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
+     * - api routes that don't require auth
      */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public/|api/public/).*)',
   ],
 } 

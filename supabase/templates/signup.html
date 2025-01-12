@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to OHF Partners</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 0; background-color: #f4f4f4;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background: linear-gradient(135deg, #4F46E5, #7C3AED); padding: 40px 20px; text-align: center; border-radius: 10px 10px 0 0;">
+      <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to OHF Partners!</h1>
+    </div>
+    
+    <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+      <p style="margin-bottom: 20px;">Hi there,</p>
+      
+      <p style="margin-bottom: 20px;">
+        Thanks for joining OHF Partners! We're excited to have you on board. To get started, please confirm your email address:
+      </p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{ .ConfirmationURL }}" style="background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          Confirm Email
+        </a>
+      </div>
+
+      <p style="margin-bottom: 20px;">
+        Or enter this confirmation code: <strong>{{ .Token }}</strong>
+      </p>
+
+      <div style="background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 30px 0;">
+        <h2 style="color: #4F46E5; margin-top: 0; font-size: 20px;">🚀 Next Steps</h2>
+        <ul style="padding-left: 20px; margin: 15px 0;">
+          <li style="margin-bottom: 10px;">Confirm your email using the button above</li>
+          <li style="margin-bottom: 10px;">Choose your access method:
+            <ul style="padding-left: 20px; margin: 5px 0;">
+              <li>Get lifetime access for a one-time payment</li>
+              <li>Hold our token in your wallet</li>
+              <li>Solve our riddle challenge for free access</li>
+            </ul>
+          </li>
+          <li>Start collaborating with your team!</li>
+        </ul>
+      </div>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        If you didn't create this account, please contact us at begin@ideatrek.io
+      </p>
+    </div>
+
+    <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+      <p>OHF Partners - A product of Idea Trek LLC</p>
+      <p>{{ .SiteURL }}</p>
+      <p>Questions? Contact us at begin@ideatrek.io</p>
+    </div>
+  </div>
+</body>
+</html> 

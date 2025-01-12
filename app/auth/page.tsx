@@ -1,19 +1,19 @@
 'use client'
 
-import React, { useState, useEffect, Suspense } from 'react'
+import React, { useState, useEffect, Suspense, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { createUserProfile } from '@/lib/supabase'
 import { FaGithub, FaGoogle } from 'react-icons/fa'
 import { Eye, EyeOff } from 'lucide-react'
 import { motion } from 'framer-motion'
-
-const DEBUG_EMAIL = 'regorhunt02052@gmail.com'
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 
 const debugLog = (message: string, data?: any) => {
   if (typeof window === 'undefined') return; // Don't run during SSR
   const currentEmail = sessionStorage.getItem('userEmail')
-  if (currentEmail === DEBUG_EMAIL) {
+  const debugEmail = process.env.NEXT_PUBLIC_DEBUG_EMAIL
+  if (debugEmail && currentEmail === debugEmail) {
     if (data) {
       console.log(message, data)
     } else {
@@ -40,6 +40,13 @@ interface AuthContentProps {
   workspaceId: string | null;
 }
 
+interface RateLimitResponse {
+  success?: boolean;
+  error?: string;
+  remainingTime?: number;
+  attemptsRemaining?: number;
+}
+
 function AuthContent({ workspaceId }: AuthContentProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -55,8 +62,18 @@ function AuthContent({ workspaceId }: AuthContentProps) {
   const [validationErrors, setValidationErrors] = useState<{
     email?: string;
     password?: string;
+    captcha?: string;
   }>({})
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const captchaRef = useRef<HCaptcha>(null)
   const supabase = createClientComponentClient()
+  const [rateLimitInfo, setRateLimitInfo] = useState<{
+    blocked: boolean;
+    remainingTime?: number;
+    attemptsRemaining?: number;
+  }>({
+    blocked: false
+  });
 
   useEffect(() => {
     debugLog('🔐 [Auth] AuthContent rendered with workspaceId:', workspaceId);
@@ -67,7 +84,7 @@ function AuthContent({ workspaceId }: AuthContentProps) {
   }, [workspaceId])
 
   const validateForm = () => {
-    const errors: { email?: string; password?: string } = {}
+    const errors: { email?: string; password?: string; captcha?: string } = {}
 
     // Email validation
     if (!email) {
@@ -83,6 +100,11 @@ function AuthContent({ workspaceId }: AuthContentProps) {
       errors.password = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`
     } else if (!PASSWORD_REGEX.test(password)) {
       errors.password = 'Password must contain uppercase, lowercase, number, and special character'
+    }
+
+    // Captcha validation
+    if (!captchaToken) {
+      errors.captcha = 'Please complete the captcha'
     }
 
     setValidationErrors(errors)
@@ -105,7 +127,7 @@ function AuthContent({ workspaceId }: AuthContentProps) {
       })
       if (error) throw error
     } catch (error: any) {
-      setError(error.message)
+      setError(error.message || 'Unable to sign in with OAuth provider. Please try again or use email/password sign in.');
     } finally {
       setLoading(false)
     }
@@ -150,9 +172,48 @@ function AuthContent({ workspaceId }: AuthContentProps) {
     }
   }
 
+  const checkRateLimit = async (email: string): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/auth/rate-limit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data: RateLimitResponse = await response.json();
+
+      if (response.status === 429) {
+        setRateLimitInfo({
+          blocked: true,
+          remainingTime: data.remainingTime,
+        });
+        setError(`Too many login attempts. Please try again in ${Math.ceil((data.remainingTime || 0) / 60000)} minutes.`);
+        return false;
+      }
+
+      if (data.attemptsRemaining !== undefined) {
+        setRateLimitInfo({
+          blocked: false,
+          attemptsRemaining: data.attemptsRemaining,
+        });
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Rate limit check failed:', error);
+      return true; // Allow the attempt if rate limit check fails
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validateForm()) return
+
+    // Check rate limit before attempting sign in
+    const canProceed = await checkRateLimit(email);
+    if (!canProceed) return;
 
     setLoading(true)
     setError(null)
@@ -163,6 +224,9 @@ function AuthContent({ workspaceId }: AuthContentProps) {
       const { data: { user }, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          captchaToken
+        }
       })
       if (error) throw error
 
@@ -212,6 +276,7 @@ function AuthContent({ workspaceId }: AuthContentProps) {
       router.push('/platform')
     } catch (error: any) {
       setError(error.message)
+      captchaRef.current?.resetCaptcha()
     } finally {
       setLoading(false)
     }
@@ -220,6 +285,10 @@ function AuthContent({ workspaceId }: AuthContentProps) {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validateForm()) return
+
+    // Check rate limit before attempting sign up
+    const canProceed = await checkRateLimit(email);
+    if (!canProceed) return;
 
     setLoading(true)
     setError(null)
@@ -232,8 +301,9 @@ function AuthContent({ workspaceId }: AuthContentProps) {
         password,
         options: {
           emailRedirectTo: `${location.origin}/auth/callback`,
+          captchaToken,
           data: {
-            is_new_signup: true // Add metadata to identify new signups
+            is_new_signup: true
           }
         },
       })
@@ -247,9 +317,31 @@ function AuthContent({ workspaceId }: AuthContentProps) {
       sessionStorage.setItem('userEmail', email)
     } catch (error: any) {
       setError(error.message)
+      captchaRef.current?.resetCaptcha()
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCaptchaVerify = (token: string) => {
+    setCaptchaToken(token)
+    setValidationErrors(prev => ({ ...prev, captcha: undefined }))
+  }
+
+  const handleCaptchaError = (event: string) => {
+    debugLog('Captcha error:', event)
+    setValidationErrors(prev => ({ 
+      ...prev, 
+      captcha: 'Unable to load captcha. Please refresh the page and try again.' 
+    }))
+  }
+
+  const handleCaptchaExpire = () => {
+    setCaptchaToken(null)
+    setValidationErrors(prev => ({ 
+      ...prev, 
+      captcha: 'Captcha has expired. Please complete the verification again.' 
+    }))
   }
 
   return (
@@ -274,7 +366,7 @@ function AuthContent({ workspaceId }: AuthContentProps) {
           </span>
 
           <h1 className="text-4xl font-bold text-white mb-3">
-            Welcome to ChatGenius
+            Welcome to OHF Partners
           </h1>
           <p className="text-xl text-gray-400 mb-6">
             Your intelligent workspace companion
@@ -419,6 +511,25 @@ function AuthContent({ workspaceId }: AuthContentProps) {
                 </button>
               </div>
             </div>
+
+            <div className="flex justify-center">
+              <HCaptcha
+                ref={captchaRef}
+                sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+                onVerify={handleCaptchaVerify}
+                onError={handleCaptchaError}
+                onExpire={handleCaptchaExpire}
+              />
+            </div>
+            {validationErrors.captcha && (
+              <p className="text-sm text-red-600 dark:text-red-400">{validationErrors.captcha}</p>
+            )}
+
+            {rateLimitInfo.attemptsRemaining !== undefined && rateLimitInfo.attemptsRemaining < 3 && (
+              <div className="text-amber-400 text-sm mt-2">
+                Warning: {rateLimitInfo.attemptsRemaining} attempts remaining before temporary lockout
+              </div>
+            )}
           </form>
         </motion.div>
       </div>

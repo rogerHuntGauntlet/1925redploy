@@ -3,6 +3,7 @@ import type { MessageType, FileAttachment } from '../types/database'
 import type { RealtimePostgresChangesPayload } from '@supabase/realtime-js'
 import logger from '@/lib/logger'
 import { createHash } from 'crypto'
+import { MessageEncryption } from '@/lib/encryption'
 
 interface MessagePayload {
   id: string;
@@ -1082,41 +1083,113 @@ export const getWorkspaceUsers = async (workspaceId: string) => {
   }
 };
 
-export const getDirectMessages = async (userId: string, otherUserId: string) => {
+interface DirectMessage {
+  id: string;
+  content: string | null;
+  encrypted_content?: {
+    ciphertext: string;
+    iv: string;
+    salt: string;
+  };
+  is_encrypted: boolean;
+  sender_id: string;
+  receiver_id: string;
+  created_at: string;
+  updated_at: string;
+  parent_id: string | null;
+  file_attachments: any[] | null;
+  sender?: {
+    id: string;
+    username: string;
+    avatar_url?: string;
+  };
+  receiver?: {
+    id: string;
+    username: string;
+    avatar_url?: string;
+  };
+}
+
+export const markMessageAsRead = async (messageId: string, userId: string) => {
   try {
-    const { data: messages, error } = await supabase
-      .from('direct_messages')
-      .select(`
-        id,
-        content,
-        created_at,
-        updated_at,
-        sender_id,
-        receiver_id,
-        parent_id,
-        file_attachments,
-        sender:user_profiles!sender_id (
-          id,
-          username,
-          avatar_url
-        ),
-        receiver:user_profiles!receiver_id (
-          id,
-          username,
-          avatar_url
-        )
-      `)
-      .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
-      .is('parent_id', null)
-      .order('created_at', { ascending: true });
+    const { error } = await supabase.rpc('update_message_read_status', {
+      _message_id: messageId,
+      _user_id: userId
+    });
 
     if (error) throw error;
-    return messages;
   } catch (error) {
-    console.error('Error fetching direct messages:', error);
+    console.error('Error marking message as read:', error);
     throw error;
   }
 };
+
+export async function getDirectMessages(
+  userId: string,
+  recipientId: string,
+  beforeTimestamp?: string,
+  limit: number = 20
+): Promise<DirectMessage[]> {
+  try {
+    let query = supabase
+      .from('direct_messages')
+      .select(`
+        *,
+        sender:user_profiles!sender_id(*),
+        receiver:user_profiles!receiver_id(*)
+      `)
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${recipientId}),and(sender_id.eq.${recipientId},receiver_id.eq.${userId})`)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    // If we have a timestamp, load messages before that timestamp
+    if (beforeTimestamp) {
+      query = query.lt('created_at', beforeTimestamp);
+    }
+
+    const { data: messages, error } = await query;
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+      throw error;
+    }
+
+    // Decrypt messages
+    const sharedSecret = await MessageEncryption.generateSharedSecret(userId, recipientId);
+    const decryptedMessages = await Promise.all(
+      (messages || []).map(async (message: DirectMessage) => {
+        if (!message.is_encrypted || !message.encrypted_content) {
+          return message;
+        }
+
+        try {
+          const decryptedContent = await MessageEncryption.decryptMessage(
+            message.encrypted_content,
+            sharedSecret
+          );
+
+          return {
+            ...message,
+            content: decryptedContent,
+            encrypted_content: null // Remove encrypted content from client
+          };
+        } catch (error) {
+          console.error('Failed to decrypt message:', error);
+          return {
+            ...message,
+            content: '[Encrypted Message - Unable to decrypt]',
+            encrypted_content: null
+          };
+        }
+      })
+    );
+
+    return decryptedMessages;
+  } catch (error) {
+    console.error('Error in getDirectMessages:', error);
+    throw error;
+  }
+}
 
 export const getUserProfile = async (userId: string) => {
   try {
@@ -1142,10 +1215,18 @@ export const sendDirectMessage = async (
   parentId: string | null = null
 ) => {
   try {
+    // Generate shared secret for encryption
+    const sharedSecret = await MessageEncryption.generateSharedSecret(senderId, receiverId);
+    
+    // Encrypt the message content
+    const encryptedContent = await MessageEncryption.encryptMessage(content, sharedSecret);
+
     const { data, error } = await supabase
       .from('direct_messages')
       .insert({
-        content,
+        content: null, // Clear text content is not stored
+        encrypted_content: encryptedContent,
+        is_encrypted: true,
         sender_id: senderId,
         receiver_id: receiverId,
         parent_id: parentId,
@@ -1153,7 +1234,8 @@ export const sendDirectMessage = async (
       })
       .select(`
         id,
-        content,
+        encrypted_content,
+        is_encrypted,
         created_at,
         updated_at,
         sender_id,
@@ -1406,3 +1488,40 @@ const createDefaultChannels = async (workspaceId: string) => {
     throw error
   }
 }
+
+export const setTypingIndicator = async (userId: string, recipientId: string, isTyping: boolean) => {
+  try {
+    const { error } = await supabase
+      .from('typing_indicators')
+      .upsert({
+        user_id: userId,
+        recipient_id: recipientId,
+        is_typing: isTyping,
+        last_typed: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,recipient_id'
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error updating typing indicator:', error);
+    throw error;
+  }
+};
+
+export const getTypingIndicator = async (userId: string, recipientId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('typing_indicators')
+      .select('is_typing, last_typed')
+      .eq('user_id', recipientId)
+      .eq('recipient_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data?.is_typing || false;
+  } catch (error) {
+    console.error('Error getting typing indicator:', error);
+    return false;
+  }
+};

@@ -3,6 +3,7 @@ import { Plus, Hash } from 'lucide-react'
 import { createChannel, getChannels, updateChannelView } from '../lib/supabase/channels'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'react-hot-toast'
+import ErrorBoundary from './ErrorBoundary'
 
 interface ChannelListProps {
   channels: Channel[]
@@ -99,59 +100,64 @@ export default function ChannelList({ channels, activeChannel, onChannelSelect, 
   }
 
   return (
-    <div className="flex flex-col space-y-2">
-      <div className="flex items-center justify-between px-2 py-2">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase">Channels</h3>
-        <button
-          onClick={() => setIsCreating(true)}
-          className="p-1 hover:bg-gray-700/50 rounded transition-colors"
-          title="Create Channel"
-        >
-          <Plus size={16} className="text-gray-400" />
-        </button>
+    <ErrorBoundary fallback={
+      <div className="p-4">
+        <p className="text-red-600">Unable to load channels. Please refresh the page.</p>
       </div>
+    }>
+      <div className="flex flex-col h-full">
+        <ErrorBoundary fallback={
+          <div className="p-4">
+            <p className="text-yellow-600">Channel management is unavailable.</p>
+          </div>
+        }>
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Channels</h2>
+              <button onClick={() => setIsCreating(true)} className="p-1 hover:bg-gray-100 rounded">
+                <Plus size={20} />
+              </button>
+            </div>
+            {/* Channel search */}
+          </div>
+        </ErrorBoundary>
 
-      <div className="space-y-0.5">
-        {localChannels.map((channel) => (
-          <button
-            key={channel.id}
-            onClick={() => handleChannelSelect(channel.id)}
-            className={`
-              w-full px-2 py-1 text-left flex items-center space-x-2 rounded-md transition-colors
-              ${activeChannel === channel.id 
-                ? 'bg-gray-700/75 text-white' 
-                : 'text-gray-300 hover:bg-gray-700/50 hover:text-gray-100'}
-            `}
-          >
-            <Hash size={15} className="flex-shrink-0 text-gray-400" />
-            <span className="truncate">{channel.name}</span>
-            {channel.unread_count ? (
-              <span className="ml-auto bg-indigo-500 text-white text-xs px-2 py-0.5 rounded-full">
-                {channel.unread_count}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
+        <ErrorBoundary fallback={
+          <div className="flex-1 p-4">
+            <p className="text-yellow-600">Channel list is unavailable.</p>
+          </div>
+        }>
+          <div className="flex-1 overflow-y-auto p-2">
+            {localChannels.map(channel => (
+              <button
+                key={channel.id}
+                onClick={() => handleChannelSelect(channel.id)}
+                className={`
+                  w-full px-2 py-1 text-left flex items-center space-x-2 rounded-md transition-colors
+                  ${activeChannel === channel.id 
+                    ? 'bg-gray-700/75 text-white' 
+                    : 'text-gray-300 hover:bg-gray-700/50 hover:text-gray-100'}
+                `}
+              >
+                <Hash size={15} className="flex-shrink-0 text-gray-400" />
+                <span className="truncate">{channel.name}</span>
+                {channel.unread_count ? (
+                  <span className="ml-auto bg-indigo-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    {channel.unread_count}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </ErrorBoundary>
 
-      {/* Create Channel Modal */}
-      <AnimatePresence>
         {isCreating && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-            onClick={() => !isLoading && setIsCreating(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-gray-800 p-6 rounded-xl shadow-2xl w-full max-w-sm border border-gray-700"
-            >
-              <h3 className="text-lg font-semibold mb-4 text-white">Create Channel</h3>
+          <ErrorBoundary fallback={
+            <div className="p-4 bg-red-50">
+              <p className="text-red-600">Channel creation is currently unavailable.</p>
+            </div>
+          }>
+            <div className="p-4 border-t">
               <form onSubmit={handleAddChannel} className="space-y-4">
                 <div>
                   <div className="flex items-center gap-2 p-2 bg-gray-700/50 rounded-lg border border-gray-600">
@@ -208,10 +214,10 @@ export default function ChannelList({ channels, activeChannel, onChannelSelect, 
                   </motion.button>
                 </div>
               </form>
-            </motion.div>
-          </motion.div>
+            </div>
+          </ErrorBoundary>
         )}
-      </AnimatePresence>
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 }

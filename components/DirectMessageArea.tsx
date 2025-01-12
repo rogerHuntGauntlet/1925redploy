@@ -1,376 +1,251 @@
 'use client'
 
-import { FC, useState, useEffect, useRef } from 'react'
-import { Send, Paperclip, Smile, Search } from 'lucide-react'
-import { getDirectMessages, sendDirectMessage, getUserProfile, supabase } from '../lib/supabase'
-import EmojiPicker from 'emoji-picker-react'
-import ChatHeader from './ChatHeader'
-import ProfileCard from './ProfileCard'
-import type { SearchResult } from './ChatHeader'
+import { useEffect, useState } from 'react';
+import { useSupabase } from '@/lib/hooks/useSupabase';
+import { encrypt, decrypt } from '@/lib/encryption';
+import config from '@/lib/config';
+import EncryptionStatus from './EncryptionStatus';
 
-interface DirectMessage {
-  id: string;
-  content: string;
-  created_at: string;
-  user_id: string;
-  receiver_id: string;
-  is_direct_message: boolean;
-  channel: string;
-  sender: {
-    id: string;
-    username: string;
-    avatar_url: string;
-  };
-  receiver: {
-    id: string;
-    username: string;
-    avatar_url: string;
-  };
+interface EncryptedData {
+  encrypted: string;
+  iv: string;
+  tag: string;
+  salt: string;
+  version?: string;
 }
 
-interface UserProfile {
+interface Message {
   id: string;
-  username: string;
-  avatar_url: string;
-  email: string;
-  phone?: string;
-  bio?: string;
-  employer?: string;
-  status: 'online' | 'offline' | 'away';
+  content?: string;
+  encrypted_content?: EncryptedData;
+  is_encrypted: boolean;
+  sender_id: string;
+  recipient_id: string;
+  created_at: string;
 }
 
 interface DirectMessageAreaProps {
-  currentUser: { id: string; email: string; username?: string };
+  currentUser: {
+    id: string;
+    email: string;
+    username?: string;
+  };
   otherUserId: string;
-  isDMListCollapsed?: boolean;
-  onClose?: () => void;
+  isDMListCollapsed: boolean;
+  onCloseAction: () => void;
 }
 
-const DirectMessageArea: FC<DirectMessageAreaProps> = ({ currentUser, otherUserId, isDMListCollapsed = false, onClose }) => {
-  const [messages, setMessages] = useState<DirectMessage[]>([])
-  const [newMessage, setNewMessage] = useState('')
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [otherUser, setOtherUser] = useState<UserProfile | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [isBroTyping, setIsBroTyping] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+interface RealtimeMessagePayload {
+  new: Message;
+  old: Message | null;
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+}
 
-  useEffect(() => {
-    if (otherUserId === 'bro-user') {
-      // Set a mock profile for Bro user
-      setOtherUser({
-        id: 'bro-user',
-        username: 'Bro',
-        avatar_url: 'https://www.feistees.com/images/uploads/2015/05/silicon-valley-bro2bro-app-t-shirt_2.jpg',
-        email: 'bro@example.com',
-        status: 'online'
-      })
-      // Set empty messages array for Bro user
-      setMessages([])
-      setError(null)
-      return
-    }
+export default function DirectMessageArea({ currentUser, otherUserId, isDMListCollapsed, onCloseAction }: DirectMessageAreaProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isEncrypted, setIsEncrypted] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { supabase } = useSupabase();
 
-    fetchMessages()
-    fetchOtherUserProfile()
-  }, [currentUser.id, otherUserId])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const fetchMessages = async () => {
-    try {
-      const fetchedMessages = await getDirectMessages(currentUser.id, otherUserId)
-      setMessages(fetchedMessages)
-      setError(null)
-    } catch (error) {
-      console.error('Error fetching messages:', error)
-      setError('Failed to load messages. Please try again.')
-    }
-  }
-
-  const fetchOtherUserProfile = async () => {
-    try {
-      const profile = await getUserProfile(otherUserId)
-      setOtherUser(profile)
-      setError(null)
-    } catch (error) {
-      console.error('Error fetching other user profile:', error)
-      setError('Failed to load user profile. Please try again.')
-    }
-  }
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (newMessage.trim()) {
-      // Special handling for Bro user
-      if (otherUserId === 'bro-user') {
-        const actualMessage = newMessage // Store the original message
-        setNewMessage('') // Clear input immediately
-        
-        // Create a client-side message object for the user's "Yo"
-        const userMessage: DirectMessage = {
-          id: Date.now().toString(),
-          content: 'Yo', // Always send "Yo" regardless of what was typed
-          created_at: new Date().toISOString(),
-          user_id: currentUser.id,
-          receiver_id: 'bro-user',
-          is_direct_message: true,
-          channel: '',
-          sender: {
-            id: currentUser.id,
-            username: currentUser.username || 'You',
-            avatar_url: ''
-          },
-          receiver: {
-            id: 'bro-user',
-            username: 'Bro',
-            avatar_url: 'https://www.feistees.com/images/uploads/2015/05/silicon-valley-bro2bro-app-t-shirt_2.jpg'
-          }
-        }
-        
-        // Add user's message immediately
-        setMessages(messages => [...messages, userMessage])
-
-        // Wait 1 second before showing typing indicator
-        setTimeout(() => {
-          setIsBroTyping(true)
-          
-          // Wait 3 more seconds of typing before sending response
-          setTimeout(() => {
-            setIsBroTyping(false)
-            const broResponse: DirectMessage = {
-              id: Date.now().toString(),
-              content: 'Yo',
-              created_at: new Date().toISOString(),
-              user_id: 'bro-user',
-              receiver_id: currentUser.id,
-              is_direct_message: true,
-              channel: '',
-              sender: {
-                id: 'bro-user',
-                username: 'Bro',
-                avatar_url: 'https://www.feistees.com/images/uploads/2015/05/silicon-valley-bro2bro-app-t-shirt_2.jpg'
-              },
-              receiver: {
-                id: currentUser.id,
-                username: currentUser.username || 'You',
-                avatar_url: ''
-              }
-            }
-            setMessages(messages => [...messages, broResponse])
-          }, 3000)
-        }, 1000)
-        
-        return
-      }
-
-      try {
-        const sentMessage = await sendDirectMessage(currentUser.id, otherUserId, newMessage.trim())
-        setMessages([...messages, sentMessage])
-        setNewMessage('')
-      } catch (error) {
-        console.error('Error sending message:', error)
-        setError('Failed to send message. Please try again.')
-      }
-    }
-  }
-
-  // Handle Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage(e as unknown as React.FormEvent)
-    }
-  }
-
-  const handleSearchResult = (result: SearchResult) => {
-    const messageElement = document.getElementById(`message-${result.messageId}`);
-    if (messageElement) {
-      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      messageElement.classList.add('bg-yellow-100', 'dark:bg-yellow-900');
-      setTimeout(() => {
-        messageElement.classList.remove('bg-yellow-100', 'dark:bg-yellow-900');
-      }, 3000);
-    }
+  // Add close handler
+  const handleClose = () => {
+    onCloseAction();
   };
 
-  // Remove the message override effect
-  useEffect(() => {
-    if (otherUserId === 'bro-user' && newMessage.trim() !== '') {
-      // Removed the auto-conversion to "Yo"
-    }
-  }, [newMessage, otherUserId])
+  // Generate a shared secret for the two users
+  const getSharedSecret = () => {
+    const sortedIds = [currentUser.id, otherUserId].sort();
+    return `${sortedIds[0]}:${sortedIds[1]}:${config.app.name}`;
+  };
 
-  const handleSearch = async (e: React.FormEvent) => {
+  useEffect(() => {
+    // Subscribe to new messages
+    const channel = supabase
+      .channel('direct_messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'direct_messages',
+          filter: `sender_id=eq.${currentUser.id},recipient_id=eq.${otherUserId}`,
+        },
+        async (payload: RealtimeMessagePayload) => {
+          const newMessage = payload.new;
+          
+          // Decrypt message if encrypted
+          if (newMessage.is_encrypted && newMessage.encrypted_content) {
+            try {
+              const decryptedContent = await decrypt(
+                newMessage.encrypted_content,
+                getSharedSecret()
+              );
+              newMessage.content = decryptedContent;
+            } catch (error) {
+              console.error('Failed to decrypt message:', error);
+              newMessage.content = '[Encrypted Message]';
+            }
+          }
+          
+          setMessages((prev) => [...prev, newMessage]);
+        }
+      )
+      .subscribe();
+
+    // Fetch existing messages
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('direct_messages')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUser.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${currentUser.id})`)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        setError('Failed to load messages');
+        return;
+      }
+
+      // Decrypt encrypted messages
+      const processedMessages = await Promise.all(
+        (data || []).map(async (message: Message) => {
+          if (message.is_encrypted && message.encrypted_content) {
+            try {
+              const decryptedContent = await decrypt(
+                message.encrypted_content,
+                getSharedSecret()
+              );
+              return { ...message, content: decryptedContent };
+            } catch (error) {
+              console.error('Failed to decrypt message:', error);
+              return { ...message, content: '[Encrypted Message]' };
+            }
+          }
+          return message;
+        })
+      );
+
+      setMessages(processedMessages);
+    };
+
+    fetchMessages();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [currentUser.id, otherUserId, supabase]);
+
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!newMessage.trim()) return;
 
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          content,
-          created_at,
-          user_id,
-          receiver_id
-        `)
-        .or(`and(user_id.eq.${currentUser.id},receiver_id.eq.${otherUserId}),and(user_id.eq.${otherUserId},receiver_id.eq.${currentUser.id})`)
-        .ilike('content', `%${searchQuery}%`)
-        .order('created_at', { ascending: false });
+      let messageData: Partial<Message> = {
+        sender_id: currentUser.id,
+        recipient_id: otherUserId,
+        created_at: new Date().toISOString(),
+      };
+
+      if (isEncrypted) {
+        const encryptedContent = await encrypt(newMessage, getSharedSecret());
+        messageData = {
+          ...messageData,
+          is_encrypted: true,
+          encrypted_content: encryptedContent,
+        };
+      } else {
+        messageData = {
+          ...messageData,
+          is_encrypted: false,
+          content: newMessage,
+        };
+      }
+
+      const { error } = await supabase
+        .from('direct_messages')
+        .insert([messageData]);
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        // Highlight the first matching message
-        const messageElement = document.getElementById(`message-${data[0].id}`);
-        if (messageElement) {
-          messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          messageElement.classList.add('bg-yellow-100', 'dark:bg-yellow-900');
-          setTimeout(() => {
-            messageElement.classList.remove('bg-yellow-100', 'dark:bg-yellow-900');
-          }, 3000);
-        }
-      }
+      setNewMessage('');
     } catch (error) {
-      console.error('Error searching messages:', error);
-      setError('Failed to search messages');
+      console.error('Failed to send message:', error);
+      setError('Failed to send message');
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center space-x-2">
-          {otherUser && (
-            <>
-              <img
-                src={otherUser.avatar_url || 'https://via.placeholder.com/40'}
-                alt={otherUser.username}
-                className="w-8 h-8 rounded-full"
-              />
-              <span className="font-medium dark:text-white">{otherUser.username}</span>
-            </>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-          aria-label="Close direct message"
-        >
-          <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center p-4 border-b">
+        <h2>Direct Message</h2>
+        <button onClick={handleClose} className="text-gray-500 hover:text-gray-700">
+          ×
         </button>
       </div>
-
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search messages..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-        </div>
-      </form>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <strong className="font-bold">Error:</strong>
-          <span className="block sm:inline"> {error}</span>
-        </div>
-      )}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        {otherUser && <ProfileCard user={otherUser} />}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
         {messages.map((message) => (
           <div
             key={message.id}
-            id={`message-${message.id}`}
-            className={`flex ${message.sender.id === currentUser.id ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${
+              message.sender_id === currentUser.id ? 'justify-end' : 'justify-start'
+            }`}
           >
-            <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-              message.sender.id === currentUser.id ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-700'
-            } rounded-lg p-3 text-white`}>
-              <p className="text-sm">{message.content}</p>
-              <p className="text-xs text-gray-200 mt-1">{new Date(message.created_at).toLocaleString()}</p>
+            <div
+              className={`max-w-xs md:max-w-md px-4 py-2 rounded-lg ${
+                message.sender_id === currentUser.id
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-900'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <p>{message.content}</p>
+                {message.is_encrypted && (
+                  <EncryptionStatus
+                    table="direct_messages"
+                    recordId={message.id}
+                    className="ml-2"
+                  />
+                )}
+              </div>
+              <div className="text-xs opacity-75 text-right">
+                {new Date(message.created_at).toLocaleTimeString()}
+              </div>
             </div>
           </div>
         ))}
-        {isBroTyping && (
-          <div className="flex justify-start">
-            <div className="flex items-center space-x-2 bg-gray-300 dark:bg-gray-700 rounded-lg p-3">
-              <img 
-                src="https://www.feistees.com/images/uploads/2015/05/silicon-valley-bro2bro-app-t-shirt_2.jpg" 
-                alt="Bro" 
-                className="w-6 h-6 rounded-full"
-              />
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-              </div>
-              <span className="text-sm text-white">Bro is typing...</span>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSendMessage} className="p-4 bg-gray-100 dark:bg-gray-800 flex items-end">
-        <button
-          type="button"
-          className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors duration-200"
-          onClick={() => alert('File upload not implemented in this demo')}
-        >
-          <Paperclip size={24} />
-        </button>
-        <textarea
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          onKeyDown={handleKeyPress}
-          placeholder="Type your message..."
-          className="flex-1 p-2 mx-2 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
-          rows={3}
-        />
-        <div className="flex flex-col justify-end space-y-2">
+      <form onSubmit={handleSend} className="p-4 border-t">
+        <div className="flex items-center space-x-2">
           <button
             type="button"
-            className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors duration-200"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            onClick={() => setIsEncrypted(!isEncrypted)}
+            className={`p-2 rounded-full ${
+              isEncrypted ? 'bg-green-500 text-white' : 'bg-gray-200'
+            }`}
+            title={isEncrypted ? 'Encryption enabled' : 'Encryption disabled'}
           >
-            <Smile size={24} />
+            {isEncrypted ? '🔒' : '🔓'}
           </button>
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-1 p-2 border rounded-lg"
+          />
           <button
             type="submit"
-            className="bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 transition-colors duration-200"
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
           >
-            <Send size={24} />
+            Send
           </button>
         </div>
       </form>
-      {showEmojiPicker && (
-        <div className="absolute bottom-20 right-8 z-10">
-          <EmojiPicker
-            onEmojiClick={(emojiObject) => {
-              setNewMessage(newMessage + emojiObject.emoji)
-              setShowEmojiPicker(false)
-            }}
-          />
-        </div>
-      )}
     </div>
-  )
+  );
 }
-
-export default DirectMessageArea

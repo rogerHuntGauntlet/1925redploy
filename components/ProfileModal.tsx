@@ -1,6 +1,7 @@
 import { FC, useState, useEffect, useRef } from 'react'
 import { X, Upload, Camera, User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import ErrorBoundary from './ErrorBoundary'
 
 interface ProfileModalProps {
   currentUser: { id: string; email: string };
@@ -171,175 +172,173 @@ const ProfileModal: FC<ProfileModalProps> = ({ currentUser, onClose }) => {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg relative overflow-hidden shadow-2xl">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
-            Edit Profile
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-          >
-            <X size={20} className="text-gray-500 dark:text-gray-400" />
-          </button>
-        </div>
-
-        {error && (
-          <div className="px-6 py-3 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-400 text-sm">
-            {error}
+    <ErrorBoundary fallback={
+      <div className="p-4">
+        <p className="text-red-600">Unable to load profile settings. Please try again later.</p>
+      </div>
+    }>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full mx-4">
+          <div className="p-4 border-b dark:border-gray-700">
+            <h2 className="text-xl font-semibold">Profile Settings</h2>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="flex items-center gap-6">
-            <div className="relative group">
-              <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 p-0.5">
-                <div className="w-full h-full rounded-full overflow-hidden bg-white dark:bg-gray-800">
-                  {avatarFile || profile.avatar_url ? (
-                    <img
-                      src={avatarFile ? URL.createObjectURL(avatarFile) : profile.avatar_url}
-                      alt="Avatar"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
-                      <User size={40} className="text-gray-400" />
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="flex gap-2">
-                  <label className="cursor-pointer p-2 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:scale-110 transition-transform">
-                    <Upload size={18} className="text-blue-500" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAvatarChange}
-                      className="hidden"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={stream ? takePhoto : startCamera}
-                    className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:scale-110 transition-transform"
-                  >
-                    <Camera size={18} className="text-green-500" />
-                  </button>
-                </div>
-              </div>
+          <ErrorBoundary fallback={
+            <div className="p-4">
+              <p className="text-yellow-600">Unable to load profile data.</p>
             </div>
-
-            {stream && (
-              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[10000]">
-                <div className="relative bg-gray-800 p-4 rounded-lg">
-                  <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline
-                    muted
-                    className="rounded-lg max-w-full max-h-[80vh] mirror-mode"
-                  />
-                  <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4">
-                    <button
-                      type="button"
-                      onClick={takePhoto}
-                      className="p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-colors"
-                    >
-                      <Camera size={24} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={stopCamera}
-                      className="p-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-colors"
-                    >
-                      <X size={24} />
-                    </button>
+          }>
+            <div className="p-4">
+              <div className="flex items-center space-x-4 mb-6">
+                <div className="relative group">
+                  <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600 p-0.5">
+                    <div className="w-full h-full rounded-full overflow-hidden bg-white dark:bg-gray-800">
+                      {avatarFile || profile.avatar_url ? (
+                        <img
+                          src={avatarFile ? URL.createObjectURL(avatarFile) : profile.avatar_url}
+                          alt="Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-700">
+                          <User size={40} className="text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-2">
+                      <label className="cursor-pointer p-2 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:scale-110 transition-transform">
+                        <Upload size={18} className="text-blue-500" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarChange}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={stream ? takePhoto : startCamera}
+                        className="p-2 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:scale-110 transition-transform"
+                      >
+                        <Camera size={18} className="text-green-500" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {stream && (
+                  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[10000]">
+                    <div className="relative bg-gray-800 p-4 rounded-lg">
+                      <video 
+                        ref={videoRef} 
+                        autoPlay 
+                        playsInline
+                        muted
+                        className="rounded-lg max-w-full max-h-[80vh] mirror-mode"
+                      />
+                      <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4">
+                        <button
+                          type="button"
+                          onClick={takePhoto}
+                          className="p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-colors"
+                        >
+                          <Camera size={24} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="p-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-colors"
+                        >
+                          <X size={24} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Username
-              </label>
-              <input
-                type="text"
-                id="username"
-                name="username"
-                value={profile.username}
-                onChange={handleChange}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                placeholder="Enter your username"
-              />
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    value={profile.username}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                    placeholder="Enter your username"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Phone
+                  </label>
+                  <input
+                    type="tel"
+                    id="phone"
+                    name="phone"
+                    value={profile.phone}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                    placeholder="Enter your phone number"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="employer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Employer
+                  </label>
+                  <input
+                    type="text"
+                    id="employer"
+                    name="employer"
+                    value={profile.employer}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                    placeholder="Enter your employer"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="bio" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Bio
+                  </label>
+                  <textarea
+                    id="bio"
+                    name="bio"
+                    value={profile.bio}
+                    onChange={handleChange}
+                    rows={3}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow resize-none"
+                    placeholder="Tell us about yourself"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
             </div>
-
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone
-              </label>
-              <input
-                type="tel"
-                id="phone"
-                name="phone"
-                value={profile.phone}
-                onChange={handleChange}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                placeholder="Enter your phone number"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="employer" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Employer
-              </label>
-              <input
-                type="text"
-                id="employer"
-                name="employer"
-                value={profile.employer}
-                onChange={handleChange}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
-                placeholder="Enter your employer"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="bio" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Bio
-              </label>
-              <textarea
-                id="bio"
-                name="bio"
-                value={profile.bio}
-                onChange={handleChange}
-                rows={3}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow resize-none"
-                placeholder="Tell us about yourself"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-colors"
-            >
-              Save Changes
-            </button>
-          </div>
-        </form>
+          </ErrorBoundary>
+        </div>
       </div>
 
       <style jsx global>{`
@@ -347,7 +346,7 @@ const ProfileModal: FC<ProfileModalProps> = ({ currentUser, onClose }) => {
           transform: scaleX(-1);
         }
       `}</style>
-    </div>
+    </ErrorBoundary>
   )
 }
 
