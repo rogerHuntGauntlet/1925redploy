@@ -42,6 +42,10 @@ export const metadata = {
     ],
   },
   manifest: '/site.webmanifest',
+}
+
+export const viewport = {
   themeColor: '#000000',
-  viewport: 'width=device-width, initial-scale=1',
+  width: 'device-width',
+  initialScale: 1,
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { SendIcon, Loader2, AlertCircle, X, Calendar, Hash, Moon, Sun, ArrowLeft } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Cookies from 'js-cookie';
@@ -30,7 +30,7 @@ const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function RAGSearchPage() {
+function RAGSearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -410,5 +410,15 @@ export default function RAGSearchPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function RAGSearchPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="w-8 h-8 animate-spin" />
+    </div>}>
+      <RAGSearchContent />
+    </Suspense>
   );
 } 
